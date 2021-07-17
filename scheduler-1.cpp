@@ -358,9 +358,11 @@ void print_pro_vector(){
     }
 }
 
-void parseInput(int argc, char *argv[]) {
+int parseInput(int argc, char *argv[]) {
     int flag;
+    int nofarg = 0;
     while ((flag = getopt(argc, argv, "s:")) != -1) {
+        nofarg++;
         char temp;
         char schedulerType;
         if (flag == 's') {
@@ -387,6 +389,7 @@ void parseInput(int argc, char *argv[]) {
             exit(0);
         }
     }
+    return nofarg;
     // read the input files
 }
 
@@ -790,9 +793,10 @@ int main(int argc, char *argv[])
     // Process proc1;
     // proc1.arrival_time = 0;
     // cout << "proc1AT" << proc1.arrival_time;
-    parseInput(argc, argv);
-    rfile = fopen(argv[3], "r");
-    inpfile = fopen(argv[2], "r");
+    int numarg;
+    numarg = parseInput(argc, argv);
+    rfile = fopen(argv[numarg + 2], "r");
+    inpfile = fopen(argv[numarg+1], "r");
     //rlinenum = readrfile_linenum();
     readrfile();
     //cout << "rlinenum" << rlinenum << "ok" << endl;
