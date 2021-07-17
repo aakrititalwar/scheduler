@@ -1,3 +1,2 @@
 main: scheduler-1.cpp
-	g++ -o scheduler scheduler-1.cpp
-	module load gcc-9.2
+	g++ -std=c++11 -o scheduler scheduler-1.cpp
