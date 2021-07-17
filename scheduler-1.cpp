@@ -51,7 +51,7 @@ FILE* inpfile;
 int CURRENT_TIME = 0;
 bool CALL_SCHEDULER = false;
 int ofs;
-Process* CURRENT_RUNNING_PROCESS = nullptr;
+Process* CURRENT_RUNNING_PROCESS = NULL;
 int rlinenum;
 int randvals[40000]; 
 static char linebuf[1024];
@@ -61,8 +61,8 @@ const char* DELIM = " \t\n\r\v\f";
 map<int, string> state_map;
 int maxprio = 4;
 int time_quantum = 10000;
-vector<list<Process*>>* active_queue;
-vector<list<Process*>>* expired_queue;
+vector<list<Process*> >* active_queue;
+vector<list<Process*> >* expired_queue;
 map<int,int> ioValues;
 int totalIoTime;
 bool verbose = false;
@@ -77,7 +77,7 @@ public :
     }
     virtual Process* get_next_process(){
         if (run_queue.empty()){
-            return nullptr;
+            return NULL;
         }
         Process* p = run_queue.front();
         run_queue.pop_front();
@@ -153,10 +153,10 @@ class SRTF : public scheduler{
 
 class PRIO : public scheduler{
     
-     vector<list<Process*>>* active_queue;
-     vector<list<Process*>>* expired_queue;
-     vector<list<Process*>> a_vector;
-     vector<list<Process*>> e_vector;
+     vector<list<Process*> >* active_queue;
+     vector<list<Process*> >* expired_queue;
+     vector<list<Process*> > a_vector;
+     vector<list<Process*> > e_vector;
     public :
 
     PRIO(){
@@ -183,7 +183,7 @@ class PRIO : public scheduler{
     }
 
     void switch_queue(){
-        vector<list<Process*>>* temp;
+        vector<list<Process*> >* temp;
         temp = active_queue;
         active_queue = expired_queue;
         expired_queue = temp;
@@ -327,7 +327,7 @@ void delete_future_event(Process* p){
 }
         
 bool checkpreempt(Process* p, Process* CurrRunPro){
-    if(CurrRunPro == nullptr){
+    if(CurrRunPro == NULL){
         return false;
     }
     if(THE_SCHEDULER->testpreempt() && !(p->preempt)){
@@ -530,7 +530,7 @@ void readrfile(){
 //             }
 
 //         }
-//         evt = nullptr;
+//         evt = NULL;
 //         event_list.pop_front();
 //         //cout << evt->trans_to;
 //     }
@@ -563,7 +563,7 @@ void simulation(){
        //cout << "cb=" << proc->curr_cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
        //cout << "before checking print event_list" << endl;
        //print_list();
-    //    if(CURRENT_RUNNING_PROCESS != nullptr){
+    //    if(CURRENT_RUNNING_PROCESS != NULL){
     //    cout << "1 " << CURRENT_RUNNING_PROCESS->dynamic_prio << "2 " << proc->dynamic_prio << endl;
     //    }
        //cout << "yay" << endl;
@@ -625,7 +625,7 @@ void simulation(){
             int ib = myrandom(proc->IO_burst);
             proc-> curr_io_burst = ib;
             proc->rem = proc->rem - proc->curr_cpu_burst;
-            CURRENT_RUNNING_PROCESS = nullptr; 
+            CURRENT_RUNNING_PROCESS = NULL; 
             proc->curr_cpu_burst = 0; 
             proc->state_ts = CURRENT_TIME;
             if(verbose)
@@ -653,7 +653,7 @@ void simulation(){
             proc->curr_cpu_burst = proc->curr_cpu_burst - time_quantum;
             proc->rem = proc->rem - time_quantum;
         }      
-        CURRENT_RUNNING_PROCESS = nullptr;
+        CURRENT_RUNNING_PROCESS = NULL;
         proc->dynamic_prio--;
         if(verbose)
         cout << "prio=" <<  proc->dynamic_prio;
@@ -665,7 +665,7 @@ void simulation(){
         {                                                  
             //printf("CASE DONE\n");
             proc->FT = CURRENT_TIME;
-            CURRENT_RUNNING_PROCESS = nullptr;
+            CURRENT_RUNNING_PROCESS = NULL;
             CALL_SCHEDULER = true;
             if (verbose)
             cout << endl;
@@ -675,7 +675,7 @@ void simulation(){
              printf("Invalid State");
         }
         // remove current event object from Memory
-        delete evt; evt = nullptr;
+        delete evt; evt = NULL;
         //cout << "hi1" << endl;
         //event_list.pop_front();
         //cout << endl;
@@ -688,11 +688,11 @@ void simulation(){
              //process next event from Event queue
              //cout << "lala" << endl;
             CALL_SCHEDULER = false; // reset global flag
-            if (CURRENT_RUNNING_PROCESS == nullptr) {
+            if (CURRENT_RUNNING_PROCESS == NULL) {
                 //printf("hi2");
             CURRENT_RUNNING_PROCESS = THE_SCHEDULER->get_next_process();
             //cout << "next process pid" << CURRENT_RUNNING_PROCESS->pid;
-            if (CURRENT_RUNNING_PROCESS == nullptr)
+            if (CURRENT_RUNNING_PROCESS == NULL)
             continue;
                 
                
