@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <getopt.h>
 #include <cstring>
 #include <cctype>
 #include <string>
@@ -26,6 +27,9 @@ struct Process {
     int FT;
     int WT;
     trans_state PrevState;
+    bool preempt;
+    int elapsed_time;
+
 };
 
 struct Event {
@@ -55,10 +59,13 @@ static char rbuf[1024];
 int timeinPrevState;
 const char* DELIM = " \t\n\r\v\f";
 map<int, string> state_map;
-int maxprio = 5;
-int time_quantum = 2;
+int maxprio = 4;
+int time_quantum = 10000;
 vector<list<Process*>>* active_queue;
 vector<list<Process*>>* expired_queue;
+map<int,int> ioValues;
+int totalIoTime;
+bool verbose = false;
 
 //int pro_num_counter = -1;
 
@@ -155,6 +162,7 @@ class PRIO : public scheduler{
     PRIO(){
 
     this->type = "PRIO";
+    //cout << "maxprio" << maxprio << endl;
     for(int i = 0;i<maxprio;i++){
         a_vector.push_back(list<Process*>());
         e_vector.push_back(list<Process*>());
@@ -164,6 +172,7 @@ class PRIO : public scheduler{
     }
 
     void add_to_run_queue(Process* p){
+        //cout << "dp"<< p->dynamic_prio  << endl;
         if(p->dynamic_prio < 0){
             p->dynamic_prio = p->static_prio - 1;
             (expired_queue->at(p->dynamic_prio)).push_back(p);
@@ -193,7 +202,7 @@ class PRIO : public scheduler{
                 return p;
             }
         }
-        printf("None found");
+        //printf("None found");
         switch_queue();
 
         for(int i = active_queue->size() - 1; i>=0; i--){
@@ -216,7 +225,7 @@ class PRIO : public scheduler{
 class PREPRIO : public PRIO {
     public :
     PREPRIO(){
-        printf("hey");
+        //printf("hey");
         this->type = "PREPRIO";
     }
     bool testpreempt(){
@@ -291,9 +300,11 @@ bool check_event_same_ts(Process* p, Process* CurrRunPro){
     list<Event*>:: iterator i = event_list.begin();
     while (i != event_list.end()){
         if((((*i)->evtProcess)->pid == CurrRunPro->pid) && ((*i)->evtTimeStamp == CURRENT_TIME)){
+            //cout << "10" << endl; 
             return true;
         }
         else if((*i)->evtTimeStamp> CURRENT_TIME){
+            //cout << "20" << endl;
             return false;
         }
         else{
@@ -308,6 +319,7 @@ void delete_future_event(Process* p){
     while(it != event_list.end()){
         if(((*it)->evtProcess)->pid == p->pid){
             event_list.erase(it);
+            break;
         }
         it++;
     }
@@ -318,8 +330,10 @@ bool checkpreempt(Process* p, Process* CurrRunPro){
     if(CurrRunPro == nullptr){
         return false;
     }
-    if(THE_SCHEDULER->testpreempt() && p->PrevState != PREEMPT){
+    if(THE_SCHEDULER->testpreempt() && !(p->preempt)){
+        //cout << "yo" << endl;
        if((p->dynamic_prio > CurrRunPro->dynamic_prio) && !(check_event_same_ts(p, CurrRunPro))){
+           //cout << "yo" << endl;
            return true;
        }
     }
@@ -344,6 +358,38 @@ void print_pro_vector(){
     }
 }
 
+void parseInput(int argc, char *argv[]) {
+    int flag;
+    while ((flag = getopt(argc, argv, "s:")) != -1) {
+        char temp;
+        char schedulerType;
+        if (flag == 's') {
+            // cout << optarg << endl;
+            schedulerType = optarg[0];
+            if (schedulerType == 'F') {
+                THE_SCHEDULER = new FCFS();
+            } else if (schedulerType == 'L') {
+                THE_SCHEDULER = new LCFS();
+            } else if (schedulerType == 'S') {
+                THE_SCHEDULER = new SRTF();
+            } else if (schedulerType == 'R') {
+                THE_SCHEDULER = new RR();
+                sscanf(optarg, "%c%d", &temp, &time_quantum);
+            } else if (schedulerType == 'P') {
+                sscanf(optarg, "%c%d:%d", &temp, &time_quantum, &maxprio);
+                THE_SCHEDULER = new PRIO();
+            } else if (schedulerType == 'E') {
+                sscanf(optarg, "%c%d:%d", &temp, &time_quantum, &maxprio);
+                THE_SCHEDULER = new PREPRIO();
+            }
+        } else {
+            cout << "Invalid Argument";
+            exit(0);
+        }
+    }
+    // read the input files
+}
+
 void readinpfile(){
     int i = -1;
     while(fgets(linebuf,1024, inpfile)){
@@ -364,15 +410,18 @@ void readinpfile(){
         p->pid = i;
         p->static_prio = myrandom(maxprio);
         p->WT = 0;
+        p->preempt = false;
+        p->elapsed_time = -1;
         //cout << "Static Prio " << i <<" " << p->static_prio << " Offset" << ofs << endl;
         p->dynamic_prio = p->static_prio-1;
+        //cout << p->pid << p->static_prio << p->dynamic_prio << endl;
         pro_vector.insert(pro_vector.begin()+i,p);
         add_event(p->arrival_time, CREATED, READY, p);
         //pro_queue.push(p);
         //delete p;
     }
-    print_pro_vector(); 
-    cout << "returned" << endl;
+    //print_pro_vector(); 
+    //cout << "returned" << endl;
 } 
 
 void initialize_sheduler(int option){
@@ -446,76 +495,96 @@ void readrfile(){
        }
 }
 
-void sim(){
-    //printf("hi");
-    Event* evt;
-    while(evt = get_event()){
-        cout << evt->evtTimeStamp;
-        Process *proc = evt->evtProcess;
-        CURRENT_TIME = evt->evtTimeStamp;
-        switch (evt->trans_to){
-            case READY:
-            {
-                printf("Case READY");
+// void sim(){
+//     //printf("hi");
+//     Event* evt;
+//     while(evt = get_event()){
+//         cout << evt->evtTimeStamp;
+//         Process *proc = evt->evtProcess;
+//         CURRENT_TIME = evt->evtTimeStamp;
+//         switch (evt->trans_to){
+//             case READY:
+//             {
+//                 printf("Case READY");
 
 
-                THE_SCHEDULER->add_to_run_queue(proc);
-                CALL_SCHEDULER = true;
-                break;
-            }
-            case RUN:
-            // create event for either preemption or blocking
-            {
-            printf("Case RUN");
-            cout << proc->IO_burst << endl;
-            int ib = myrandom(proc->IO_burst);
-            cout << "ib=" << ib;
-            proc-> curr_io_burst = ib;
-            add_event(CURRENT_TIME+proc->curr_cpu_burst,RUN,BLOCK,proc);
-            break;
-            }
-            case BLOCK:
-            {
-                printf("Case BLOCK");
-                break;
-            }
+//                 THE_SCHEDULER->add_to_run_queue(proc);
+//                 CALL_SCHEDULER = true;
+//                 break;
+//             }
+//             case RUN:
+//             // create event for either preemption or blocking
+//             {
+//             printf("Case RUN");
+//             cout << proc->IO_burst << endl;
+//             int ib = myrandom(proc->IO_burst);
+//             cout << "ib=" << ib;
+//             proc-> curr_io_burst = ib;
+//             add_event(CURRENT_TIME+proc->curr_cpu_burst,RUN,BLOCK,proc);
+//             break;
+//             }
+//             case BLOCK:
+//             {
+//                 printf("Case BLOCK");
+//                 break;
+//             }
 
-        }
-        evt = nullptr;
-        event_list.pop_front();
-        //cout << evt->trans_to;
-    }
-}
+//         }
+//         evt = nullptr;
+//         event_list.pop_front();
+//         //cout << evt->trans_to;
+//     }
+// }
 
 void simulation(){
     Event* evt;
     //printf("hi");
     while (evt = get_event()){
         Process *proc = evt->evtProcess;
+        //cout << "ra" << endl;
         CURRENT_TIME = evt->evtTimeStamp;
         proc->PrevState = evt->trans_from;
         timeinPrevState = CURRENT_TIME - proc->state_ts;
+        if(verbose)
         cout << CURRENT_TIME << " " <<proc->pid << " " << timeinPrevState << " " << state_map[evt->trans_from]<<"->" << state_map[evt->trans_to] ;
         //print_list();
         event_list.pop_front();
         //cout << "Popped " << evt->trans_to  << endl;
         switch(evt->trans_to) { // which state to transition to?
+
         case READY:
         // must come from BLOCKED or from PREEMPTION
         // must add to run queue
         {
        //printf("Case READY");
-       cout << "before checking print event_list" << endl;
-       print_list();
-       if(CURRENT_RUNNING_PROCESS != nullptr){
-       cout << "1 " << CURRENT_RUNNING_PROCESS->dynamic_prio << "2 " << proc->dynamic_prio << endl;
+       if(proc->PrevState == BLOCK ){
+           proc->dynamic_prio = proc->static_prio - 1;
        }
+       //cout << "cb=" << proc->curr_cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
+       //cout << "before checking print event_list" << endl;
+       //print_list();
+    //    if(CURRENT_RUNNING_PROCESS != nullptr){
+    //    cout << "1 " << CURRENT_RUNNING_PROCESS->dynamic_prio << "2 " << proc->dynamic_prio << endl;
+    //    }
+       //cout << "yay" << endl;
+       
+       
        if(checkpreempt(proc,CURRENT_RUNNING_PROCESS)){
-           delete_future_event(CURRENT_RUNNING_PROCESS);
+           if(verbose)
+           cout << "----------------preemption YES--------------------" << CURRENT_RUNNING_PROCESS->pid << "by" << proc->pid << endl;
+           delete_future_event(CURRENT_RUNNING_PROCESS);   
+           CURRENT_RUNNING_PROCESS->preempt = true;
+           CURRENT_RUNNING_PROCESS->elapsed_time = CURRENT_TIME - CURRENT_RUNNING_PROCESS->state_ts;
            add_event(CURRENT_TIME, RUN, PREEMPT, CURRENT_RUNNING_PROCESS);
+            //cout << "ET " << CURRENT_RUNNING_PROCESS->elapsed_time;
+            // CURRENT_RUNNING_PROCESS->curr_cpu_burst = CURRENT_RUNNING_PROCESS->curr_cpu_burst - elapsed_time;
+            // CURRENT_RUNNING_PROCESS->rem = CURRENT_RUNNING_PROCESS->rem - elapsed_time;
        }
-       THE_SCHEDULER->add_to_run_queue(proc);
+       proc->preempt = false;
+       //cout << "pp" << endl;
+       //p->preempt = false
        proc->state_ts = CURRENT_TIME;
+       THE_SCHEDULER->add_to_run_queue(proc);
        CALL_SCHEDULER = true; // conditional on whether something is run
         break;
         }
@@ -534,10 +603,12 @@ void simulation(){
                     proc->curr_cpu_burst = cb;
         }
         proc->state_ts = CURRENT_TIME;
-        cout << "cb=" << proc->curr_cpu_burst << " rem=" << proc->rem;
+        if(verbose)
+        cout << "cb=" << proc->curr_cpu_burst << " rem=" << proc->rem << " prio=" << proc->dynamic_prio;
         if(time_quantum<proc->curr_cpu_burst){
             add_event(CURRENT_TIME+time_quantum, RUN, PREEMPT, proc);
-            proc->curr_cpu_burst = proc->curr_cpu_burst - time_quantum;
+            
+            //proc->rem = proc->rem - time_quantum;
         }
         else if(proc->rem == proc->curr_cpu_burst){
             add_event(CURRENT_TIME+proc->curr_cpu_burst,RUN,DONE,proc);
@@ -557,9 +628,11 @@ void simulation(){
             CURRENT_RUNNING_PROCESS = nullptr; 
             proc->curr_cpu_burst = 0; 
             proc->state_ts = CURRENT_TIME;
+            if(verbose)
             cout << " ib=" << proc->curr_io_burst <<"rem=" << proc->rem;
             proc->total_IO_time = proc->total_IO_time + proc->curr_io_burst;
             //cout << CURRENT_TIME+proc->curr_io_burst << endl;
+            ioValues.insert(pair<int,int>(CURRENT_TIME, CURRENT_TIME + ib));
             add_event(CURRENT_TIME+proc->curr_io_burst, BLOCK, READY,proc);
             //printf("hi4");
         //create an event for when process becomes READY again
@@ -571,9 +644,18 @@ void simulation(){
         {
         //printf("CASE PREEMPT");
         //THE_SCHEDULER->add_to_run_queue(proc);
-        proc->rem = proc->rem - time_quantum;
+        if(proc->preempt){
+            proc->curr_cpu_burst = proc->curr_cpu_burst - proc->elapsed_time;
+            proc->rem = proc->rem - proc->elapsed_time;
+            //proc->preempt = false;
+        }
+        else{
+            proc->curr_cpu_burst = proc->curr_cpu_burst - time_quantum;
+            proc->rem = proc->rem - time_quantum;
+        }      
         CURRENT_RUNNING_PROCESS = nullptr;
         proc->dynamic_prio--;
+        if(verbose)
         cout << "prio=" <<  proc->dynamic_prio;
         add_event(CURRENT_TIME,PREEMPT,READY,proc);
         CALL_SCHEDULER = true;
@@ -584,6 +666,8 @@ void simulation(){
             //printf("CASE DONE\n");
             proc->FT = CURRENT_TIME;
             CURRENT_RUNNING_PROCESS = nullptr;
+            CALL_SCHEDULER = true;
+            if (verbose)
             cout << endl;
             break;
         }
@@ -594,13 +678,15 @@ void simulation(){
         delete evt; evt = nullptr;
         //cout << "hi1" << endl;
         //event_list.pop_front();
-        cout << endl;
+        //cout << endl;
         if(CALL_SCHEDULER) {
             //cout << "hey " << get_next_event_time() <<  endl;
             if (get_next_event_time() == CURRENT_TIME) {
+                //cout << "yo" << endl;
                 continue;
             }
              //process next event from Event queue
+             //cout << "lala" << endl;
             CALL_SCHEDULER = false; // reset global flag
             if (CURRENT_RUNNING_PROCESS == nullptr) {
                 //printf("hi2");
@@ -623,10 +709,80 @@ void simulation(){
 
 }
 
-// print_output(){
-//     cout << THE_SCHEDULER->type<< " " << time_quantum << endl;
-//     for(int i =0; i< )
-// }
+double calCPUutil(){
+    int sum = 0;
+    for(int i = 0; i<pro_vector.size(); i++){
+        Process* p = pro_vector.at(i);
+        sum = sum + p->cpu_time;
+    }
+    double cpuutil;
+    //cout << sum << endl;
+    //cpuutil = (sum/CURRENT_TIME * 100);
+    //cout << cpuutil;
+    return (double (sum)/CURRENT_TIME)* 100;
+
+}
+
+double avgtat(){
+    int avgtat = 0;
+    for(int i = 0; i<pro_vector.size(); i++){
+        Process* p = pro_vector.at(i);
+        avgtat = avgtat + (p->FT - p->arrival_time);
+    }
+    //cout << avgtat << endl;
+    return (double (avgtat)/pro_vector.size());
+}
+
+double avgwt(){
+    int avgwt = 0;
+    for(int i = 0; i<pro_vector.size(); i++){
+        Process* p = pro_vector.at(i);
+        avgwt = avgwt + (p->WT);
+    }
+    return (double (avgwt)/pro_vector.size());
+
+}
+
+void calculateTotalIO(){
+    int total=0, totalOverlap=0, firstValue=0, secondValue=0;
+//    cout << "mymap contains:\n";
+    map<int,int>::iterator it = ioValues.begin();
+    firstValue=it->first;
+    secondValue=it->second;
+    //cout<<secondValue<<endl;
+    for (it=ioValues.begin(); it!=ioValues.end(); ++it) {
+        total = total + (it->second - it->first);
+        if(it->first<secondValue && it!=ioValues.begin()){
+            if(it->second<secondValue) {
+                totalOverlap=totalOverlap+(it->second-it->first);
+            }else {
+                totalOverlap = totalOverlap + (secondValue - it->first);
+            }
+        }
+        if(it->second>secondValue) {
+            secondValue = it->second;
+        }
+    }
+    //cout <<total <<" overlap: "<<totalOverlap;
+    totalIoTime=total-totalOverlap;
+}
+
+void print_output(){
+    cout << THE_SCHEDULER->type ;
+    if(time_quantum == 10000){
+        cout << endl;
+    }
+    else{
+        cout << " " << time_quantum << endl;
+    }
+    for(int i =0; i<pro_vector.size();i++){
+        Process* p = pro_vector.at(i);
+        printf("%04d: %4d %4d %4d %4d %1d | %5d %5d %5d %5d\n",p->pid,p->arrival_time,p->cpu_time,p->CPU_burst,p->IO_burst,p->static_prio,p->FT,(p->FT - p->arrival_time),p->total_IO_time,p->WT);
+    }
+    calculateTotalIO();
+    printf("SUM: %d %.2lf %.2lf %.2lf %.2lf %.3lf",CURRENT_TIME,calCPUutil(),(double (totalIoTime)/CURRENT_TIME) *100, avgtat(), avgwt(), (double (pro_vector.size())/CURRENT_TIME)* 100);
+    cout << endl;
+}
 
 
 int main(int argc, char *argv[])
@@ -634,23 +790,24 @@ int main(int argc, char *argv[])
     // Process proc1;
     // proc1.arrival_time = 0;
     // cout << "proc1AT" << proc1.arrival_time;
-    rfile = fopen(argv[2], "r");
-    inpfile = fopen(argv[1], "r");
+    parseInput(argc, argv);
+    rfile = fopen(argv[3], "r");
+    inpfile = fopen(argv[2], "r");
     //rlinenum = readrfile_linenum();
     readrfile();
-    cout << "rlinenum" << rlinenum << "ok" << endl;
+    //cout << "rlinenum" << rlinenum << "ok" << endl;
     //fseek(rfile, 0, SEEK_SET);
     readinpfile();
     int option = 6;
-    initialize_sheduler(option);
-    cout << "TIME Quantum" << time_quantum << endl;
+    //initialize_sheduler(option);
+    //cout << "TIME Quantum" << time_quantum << endl;
     initialize_state_map();
     //add_event(500, CREATED, RUN, pro_vector.at(1));
     //add_event(0, CREATED, RUN, pro_vector.at(0));
-    printf("Simulation");
+    //printf("Simulation");
     //sim();
     simulation();
-    //print_output();
+    print_output();
 
     
     
